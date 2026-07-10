@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#080b14">
+<title>向心力實驗 · 圓周運動</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#080b14; --bg-elev:#0f1524; --panel:#131b2e; --line:#1e2942;
+    --txt:#e6ecf7; --muted:#8394b3;
+    --cent:#ff5f6d;   /* 向心力 */
+    --vel:#34e2e2;    /* 移動方向 */
+    --accent:#5b8cff; --good:#38e08a; --warn:#ffb547; --bad:#ff6b6b;
+    --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    --disp:'Space Grotesk',system-ui,-apple-system,'Segoe UI','Noto Sans TC',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{background:var(--bg);color:var(--txt);font-family:var(--disp);}
+  body{min-height:100dvh;max-width:600px;margin:0 auto;padding:18px 16px 40px;
+    background:
+      radial-gradient(1100px 560px at 50% -10%,#101a33 0%,transparent 60%),
+      radial-gradient(760px 460px at 90% 15%,#161033 0%,transparent 55%),
+      var(--bg);
+    overflow-x:hidden;}
+
+  .head{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .logo{width:38px;height:38px;flex:none;filter:drop-shadow(0 0 8px rgba(91,140,255,.5));}
+  .logo .orbit{fill:none;stroke:var(--accent);stroke-width:2;opacity:.75;}
+  .logo .nucleus{fill:var(--accent);} .logo .e{fill:var(--vel);}
+  .titles h1{font-size:17px;font-weight:700;letter-spacing:.3px;}
+  .titles p{font-family:var(--mono);font-size:10px;letter-spacing:3px;color:var(--muted);margin-top:3px;}
+
+  .banner{display:none;background:rgba(255,181,71,.1);border:1px solid rgba(255,181,71,.35);
+    color:var(--warn);font-size:12px;line-height:1.5;padding:10px 12px;border-radius:10px;margin-bottom:12px;}
+  .banner.show{display:block;}
+
+  /* 轉盤（招牌） */
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px;margin-bottom:12px;}
+  #turntable{width:100%;display:block;border-radius:12px;background:#0a0f1c;touch-action:none;}
+  .legend{display:flex;justify-content:center;gap:20px;margin-top:8px;padding-bottom:2px;}
+  .legend span{font-family:var(--mono);font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;}
+  .legend i{width:16px;height:4px;border-radius:2px;}
+  .lc{color:var(--cent);} .lc i{background:var(--cent);}
+  .lv{color:var(--vel);} .lv i{background:var(--vel);}
+
+  /* 控制 */
+  .controls{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:14px;}
+  .btn{font-family:var(--disp);font-weight:600;font-size:15px;color:#fff;border:none;border-radius:12px;
+    padding:14px;cursor:pointer;transition:transform .12s,filter .2s;letter-spacing:.3px;}
+  .btn:active{transform:scale(.98);} .btn:hover{filter:brightness(1.08);}
+  .btn:focus-visible{outline:2px solid #fff;outline-offset:3px;}
+  .btn.go{background:linear-gradient(135deg,#38e08a,#22c07a);color:#04140c;box-shadow:0 5px 18px rgba(56,224,138,.28);}
+  .btn.pause{background:linear-gradient(135deg,#ffb547,#ff9a3f);color:#1a1204;}
+  .btn.ghost{background:var(--bg-elev);color:var(--txt);border:1px solid var(--line);}
+
+  .status{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--muted);margin:-4px 2px 14px;line-height:1.5;}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none;}
+  .dot.on{background:var(--good);box-shadow:0 0 10px var(--good);}
+  .dot.warn{background:var(--warn);box-shadow:0 0 8px var(--warn);}
+  .dot.err{background:var(--bad);box-shadow:0 0 8px var(--bad);}
+
+  /* 數字面板 */
+  .nums{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .num{background:var(--bg-elev);border:1px solid var(--line);border-radius:13px;padding:12px 13px;position:relative;overflow:hidden;}
+  .num.wide{grid-column:1 / -1;}
+  .num .lbl{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted);}
+  .num .lbl b{color:var(--txt);font-weight:600;letter-spacing:0;}
+  .num .val{font-family:var(--mono);font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:4px;line-height:1;}
+  .num .val small{font-size:12px;color:var(--muted);font-weight:400;margin-left:4px;}
+  .num .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:5px;}
+  .num.cent{border-top:2px solid var(--cent);} .num.cent .val{color:var(--cent);}
+  .num.vel{border-top:2px solid var(--vel);} .num.vel .val{color:var(--vel);}
+
+  /* 設定 */
+  .settings{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px;}
+  .srow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;}
+  .srow + .srow{border-top:1px solid var(--line);}
+  .srow label{font-size:13px;color:var(--txt);}
+  .srow .hint{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px;}
+  .mass{display:flex;align-items:center;gap:8px;}
+  .mass input{width:84px;font-family:var(--mono);font-size:14px;color:var(--txt);background:var(--bg);
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;text-align:right;}
+  .mass input:focus{outline:none;border-color:var(--accent);}
+  .mass span{font-family:var(--mono);font-size:13px;color:var(--muted);}
+  .tgl{font-family:var(--mono);font-size:12px;color:var(--accent);background:transparent;border:1px solid var(--line);
+    border-radius:8px;padding:7px 12px;cursor:pointer;transition:background .2s;white-space:nowrap;}
+  .tgl.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+  .notes{background:var(--bg-elev);border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-size:12px;line-height:1.7;color:var(--muted);}
+  .notes b{color:var(--txt);font-weight:600;}
+  .notes ul{list-style:none;margin-top:8px;} .notes li{padding-left:16px;position:relative;margin-top:6px;}
+  .notes li::before{content:"▸";position:absolute;left:0;color:var(--accent);}
+  .notes .warn::before{content:"⚠";color:var(--warn);}
+  .notes code{font-family:var(--mono);font-size:11px;color:var(--vel);background:rgba(52,226,226,.08);padding:1px 5px;border-radius:4px;}
+</style>
+</head>
+<body>
+
+  <header class="head">
+    <svg class="logo" viewBox="0 0 48 48" aria-hidden="true">
+      <ellipse class="orbit" cx="24" cy="24" rx="20" ry="8"/>
+      <ellipse class="orbit" cx="24" cy="24" rx="20" ry="8" transform="rotate(60 24 24)"/>
+      <ellipse class="orbit" cx="24" cy="24" rx="20" ry="8" transform="rotate(120 24 24)"/>
+      <circle class="nucleus" cx="24" cy="24" r="4"/><circle class="e" cx="44" cy="24" r="2.6"/>
+    </svg>
+    <div class="titles"><h1>向心力實驗</h1><p>CIRCULAR MOTION</p></div>
+  </header>
+
+  <div class="banner" id="secBanner">需在 HTTPS 環境執行。</div>
+  <div class="banner" id="embedBanner">本頁被內嵌於 iframe，感測器常被封鎖，請直接開啟網址。</div>
+
+  <section class="stage">
+    <canvas id="turntable"></canvas>
+    <div class="legend">
+      <span class="lc"><i></i>向心力</span>
+      <span class="lv"><i></i>移動方向</span>
+    </div>
+  </section>
+
+  <div class="controls">
+    <button class="btn go" id="mainBtn">▶ 開始</button>
+    <button class="btn ghost" id="resetBtn">歸零</button>
+  </div>
+  <div class="status"><span class="dot" id="stDot"></span><span id="stText">把手機螢幕朝上平放在轉盤上，按開始</span></div>
+
+  <div class="nums">
+    <div class="num cent">
+      <div class="lbl"><b>向心加速度</b> a</div>
+      <div class="val" id="nAc">0.00<small>m/s²</small></div>
+      <div class="sub" id="nAcG">0.00 g</div>
+    </div>
+    <div class="num vel">
+      <div class="lbl"><b>線速度</b> v</div>
+      <div class="val" id="nV">–<small>m/s</small></div>
+      <div class="sub" id="nVk">– km/h</div>
+    </div>
+    <div class="num">
+      <div class="lbl"><b>轉速</b> ω</div>
+      <div class="val" id="nRpm">0.0<small>rpm</small></div>
+      <div class="sub" id="nOmega">0 °/s · 0.00 rad/s</div>
+    </div>
+    <div class="num">
+      <div class="lbl"><b>半徑</b> r</div>
+      <div class="val" id="nR">–<small>m</small></div>
+      <div class="sub">r = a / ω²</div>
+    </div>
+    <div class="num wide cent">
+      <div class="lbl"><b>向心力</b> F = m · a</div>
+      <div class="val" id="nF">0.00<small>N</small></div>
+      <div class="sub" id="nFsub">質量 0.20 kg</div>
+    </div>
+  </div>
+
+  <section class="settings">
+    <div class="srow">
+      <div><label>物體質量</label><div class="hint">用於計算向心力 F</div></div>
+      <div class="mass"><input type="number" id="massInput" value="0.20" min="0" step="0.01" inputmode="decimal"><span>kg</span></div>
+    </div>
+    <div class="srow">
+      <div><label>反轉旋轉方向</label><div class="hint">讓畫面轉向與實際轉盤一致</div></div>
+      <button class="tgl" id="flipBtn">正常</button>
+    </div>
+  </section>
+
+  <div class="notes">
+    <b>怎麼玩</b>
+    <ul>
+      <li>手機<b>螢幕朝上</b>平放在轉盤上：懶人轉盤、辦公椅、唱片機都行。</li>
+      <li>先確認桌面水平，靜止時按<b>歸零</b>校正傾斜偏移，再轉動轉盤。</li>
+      <li>紅箭頭<b>向心力</b>指向圓心，藍箭頭<b>移動方向</b>沿切線；長度隨大小變化，實際數值看下方。</li>
+      <li>公式：<code>a = ω²r</code> · <code>v = ωr</code> · <code>F = m·a</code>，半徑與速度由加速度計和陀螺儀反推。</li>
+      <li>轉速／半徑／速度需要<b>陀螺儀</b>；電腦或缺陀螺儀的裝置只會顯示加速度。</li>
+      <li class="warn">轉太快手機會被甩出去，建議用膠帶固定並放慢速度。</li>
+    </ul>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  var G=9.80665, DEG=Math.PI/180, K=0.15, WMIN=0.30; // WMIN rad/s：低於此轉速時 r/v 不可靠
+  var $=function(id){return document.getElementById(id);};
+
+  var S={
+    running:false, paused:false,
+    accelOk:false, gyroOk:false, gotMotion:false,
+    ac:0, omega:0, theta:0,          // 平滑後：向心加速度、角速度(rad/s,含號)、顯示角度
+    gx0:0, gy0:0,                    // 傾斜偏移校正
+    mass:0.20, flip:1,
+    raw:{gx:0,gy:0,alpha:0},
+    last:0
+  };
+
+  var secure=window.isSecureContext, inIframe=false;
+  try{ inIframe=(window.self!==window.top); }catch(e){ inIframe=true; }
+  if(!secure) $("secBanner").classList.add("show");
+  if(inIframe) $("embedBanner").classList.add("show");
+
+  // 畫布
+  var cv=$("turntable"), ctx=cv.getContext("2d"), W=0,H=0;
+  function resize(){
+    var r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    W=r.width; H=Math.min(r.width,380); cv.style.height=H+"px";
+    cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    draw();
+  }
+  window.addEventListener("resize", resize);
+
+  function setStatus(cls,t){ $("stDot").className="dot"+(cls?" "+cls:""); $("stText").textContent=t; }
+
+  // 感測
+  function onMotion(e){
+    var ag=e.accelerationIncludingGravity, r=e.rotationRate;
+    if(ag && ag.x!==null && ag.x!==undefined){
+      S.accelOk=true; S.gotMotion=true; S.raw.gx=ag.x||0; S.raw.gy=ag.y||0;
+    }
+    if(r && r.alpha!==null && r.alpha!==undefined){ S.gyroOk=true; S.raw.alpha=r.alpha||0; }
+  }
+
+  function main(){
+    if(!S.running){ startRun(); }
+    else if(!S.paused){ S.paused=true; $("mainBtn").textContent="▶ 繼續"; $("mainBtn").className="btn go"; setStatus("warn","已暫停"); }
+    else { S.paused=false; $("mainBtn").textContent="⏸ 暫停"; $("mainBtn").className="btn pause"; S.last=performance.now(); loop(); setStatus("on","量測中"); }
+  }
+
+  function startRun(){
+    if(typeof DeviceMotionEvent==="undefined"){ setStatus("err","此瀏覽器不支援動作感測"); return; }
+    var need=(typeof DeviceMotionEvent.requestPermission==="function");
+    if(need){
+      DeviceMotionEvent.requestPermission().then(function(res){
+        if(res==="granted") begin(); else setStatus("err","權限被拒，可到 設定 > Safari > 動作與方向存取 開啟");
+      }).catch(function(){ setStatus("err","授權失敗，請再點一次"); });
+    } else begin();
+  }
+  function begin(){
+    window.addEventListener("devicemotion", onMotion);
+    S.running=true; S.paused=false; S.gotMotion=false; S.gyroOk=false;
+    S.last=performance.now();
+    $("mainBtn").textContent="⏸ 暫停"; $("mainBtn").className="btn pause";
+    setStatus("on","量測中 — 轉動轉盤");
+    loop();
+    setTimeout(function(){
+      if(S.running && !S.gotMotion){
+        setStatus("warn", inIframe ? "無感測資料 — 內嵌環境常封鎖，請直接開啟網址"
+                                    : "無感測資料 — 此裝置可能沒有加速度計");
+      } else if(S.running && !S.gyroOk){
+        setStatus("warn","偵測不到陀螺儀 — 僅顯示加速度，無法算轉速／半徑／速度");
+      }
+    },2500);
+  }
+
+  function reset(){
+    // 靜止時把當前水平讀值當作偏移校正；同時角度歸零
+    if(Math.abs(S.raw.alpha)<8){ S.gx0=S.raw.gx; S.gy0=S.raw.gy; }
+    S.theta=0; S.ac=0; S.omega=0;
+    draw();
+    if(S.running) setStatus(S.paused?"warn":"on", S.paused?"已暫停（已歸零）":"已歸零");
+  }
+
+  // 主迴圈
+  function loop(){
+    if(!S.running || S.paused) return;
+    var now=performance.now(), dt=(now-S.last)/1000; S.last=now;
+    if(dt>0.1) dt=0.1;
+
+    var gx=S.raw.gx-S.gx0, gy=S.raw.gy-S.gy0;
+    var acInst=Math.sqrt(gx*gx+gy*gy);
+    S.ac += K*(acInst-S.ac);
+
+    var wInst=S.raw.alpha*DEG*S.flip;
+    S.omega += K*(wInst-S.omega);
+    S.theta += S.omega*dt;
+
+    updateNums();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function updateNums(){
+    var aw=Math.abs(S.omega);
+    var reliable = S.gyroOk && aw>WMIN;
+    var r = reliable ? S.ac/(aw*aw) : NaN;
+    var v = reliable ? S.ac/aw : NaN;
+    var rpm = S.gyroOk ? aw*60/(2*Math.PI) : NaN;
+    var F = S.mass*S.ac;
+
+    $("nAc").innerHTML=S.ac.toFixed(2)+'<small>m/s²</small>';
+    $("nAcG").textContent=(S.ac/G).toFixed(2)+" g";
+
+    if(!isNaN(v)){ $("nV").innerHTML=v.toFixed(2)+'<small>m/s</small>'; $("nVk").textContent=(v*3.6).toFixed(1)+" km/h"; }
+    else { $("nV").innerHTML='–<small>m/s</small>'; $("nVk").textContent=(S.gyroOk?"轉速過低":"需陀螺儀"); }
+
+    if(!isNaN(rpm)){ $("nRpm").innerHTML=rpm.toFixed(1)+'<small>rpm</small>';
+      $("nOmega").textContent=Math.abs(S.raw.alpha).toFixed(0)+" °/s · "+aw.toFixed(2)+" rad/s"; }
+    else { $("nRpm").innerHTML='–<small>rpm</small>'; $("nOmega").textContent="需陀螺儀"; }
+
+    if(!isNaN(r)){ $("nR").innerHTML=(r>99?">99":r.toFixed(2))+'<small>m</small>'; }
+    else { $("nR").innerHTML='–<small>m</small>'; }
+
+    $("nF").innerHTML=F.toFixed(2)+'<small>N</small>';
+  }
+
+  // 繪圖
+  function draw(){
+    if(W===0){ resize(); return; }
+    ctx.clearRect(0,0,W,H);
+    var cx=W/2, cy=H/2, R=Math.min(W,H)*0.40, Rp=R*0.72;
+
+    // 轉盤圓盤
+    var grd=ctx.createRadialGradient(cx,cy,R*0.1,cx,cy,R);
+    grd.addColorStop(0,"#141d33"); grd.addColorStop(1,"#0c1223");
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.fill();
+    ctx.strokeStyle="rgba(91,140,255,.35)"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.stroke();
+
+    // 同心環
+    ctx.strokeStyle="rgba(30,41,66,.9)"; ctx.lineWidth=1;
+    for(var i=1;i<=3;i++){ ctx.beginPath(); ctx.arc(cx,cy,R*i/4,0,7); ctx.stroke(); }
+
+    // 路徑虛線
+    ctx.setLineDash([4,6]); ctx.strokeStyle="rgba(131,148,179,.35)";
+    ctx.beginPath(); ctx.arc(cx,cy,Rp,0,7); ctx.stroke(); ctx.setLineDash([]);
+
+    // 圓心
+    ctx.fillStyle="#5b8cff"; ctx.beginPath(); ctx.arc(cx,cy,4,0,7); ctx.fill();
+    ctx.strokeStyle="rgba(131,148,179,.5)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(cx-9,cy); ctx.lineTo(cx+9,cy); ctx.moveTo(cx,cy-9); ctx.lineTo(cx,cy+9); ctx.stroke();
+
+    // 手機位置
+    var th=S.theta;
+    var px=cx+Rp*Math.cos(th), py=cy+Rp*Math.sin(th);
+
+    // 手機圖示（跟著轉）
+    ctx.save(); ctx.translate(px,py); ctx.rotate(th+Math.PI/2);
+    ctx.fillStyle="#0f1524"; ctx.strokeStyle="rgba(91,140,255,.7)"; ctx.lineWidth=1.5;
+    roundRect(-11,-20,22,40,5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle="rgba(91,140,255,.25)"; roundRect(-8,-16,16,32,3); ctx.fill();
+    ctx.restore();
+
+    // 箭頭方向
+    var toC={x:(cx-px),y:(cy-py)}; toC=norm(toC);
+    var vel={x:-Math.sin(th)*sign(S.omega), y:Math.cos(th)*sign(S.omega)};
+    if(S.omega===0) vel={x:0,y:0};
+
+    var Lc=clamp(24+S.ac*7, 26, R*0.95);
+    var vMag=(S.gyroOk && Math.abs(S.omega)>WMIN)? S.ac/Math.abs(S.omega):0;
+    var Lv=clamp(24+vMag*32, 26, R*0.95);
+
+    if(S.ac>0.05) arrow(px,py,toC.x,toC.y,Lc,"#ff5f6d","a="+S.ac.toFixed(1));
+    if(vMag>0.02) arrow(px,py,vel.x,vel.y,Lv,"#34e2e2","v="+vMag.toFixed(1));
+  }
+
+  function arrow(x,y,ux,uy,len,color,label){
+    var x2=x+ux*len, y2=y+uy*len, ang=Math.atan2(uy,ux), ah=13, aw=7;
+    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.shadowColor=color; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-ah*Math.cos(ang)+aw*Math.sin(ang), y2-ah*Math.sin(ang)-aw*Math.cos(ang));
+    ctx.lineTo(x2-ah*Math.cos(ang)-aw*Math.sin(ang), y2-ah*Math.sin(ang)+aw*Math.cos(ang));
+    ctx.closePath(); ctx.fill(); ctx.shadowBlur=0;
+    // 標籤
+    ctx.font="600 12px 'JetBrains Mono',monospace";
+    var tw=ctx.measureText(label).width, lx=x2+ux*12, ly=y2+uy*12;
+    ctx.fillStyle="rgba(8,11,20,.85)"; roundRect(lx-tw/2-6,ly-9,tw+12,18,5); ctx.fill();
+    ctx.fillStyle=color; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText(label,lx,ly);
+  }
+  function roundRect(x,y,w,h,r){ ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+  function norm(v){ var m=Math.hypot(v.x,v.y)||1; return {x:v.x/m,y:v.y/m}; }
+  function sign(x){ return x>0?1:(x<0?-1:0); }
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+  // 設定
+  $("massInput").addEventListener("input", function(){
+    var m=parseFloat(this.value); S.mass=(isNaN(m)||m<0)?0:m;
+    $("nFsub").textContent="質量 "+S.mass.toFixed(2)+" kg";
+    if(!S.running||S.paused) updateNums();
+  });
+  $("flipBtn").addEventListener("click", function(){
+    S.flip*=-1; this.classList.toggle("on",S.flip<0); this.textContent=S.flip<0?"已反轉":"正常";
+  });
+  $("mainBtn").addEventListener("click", main);
+  $("resetBtn").addEventListener("click", reset);
+
+  resize();
+})();
+</script>
+</body>
+</html>
