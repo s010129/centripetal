@@ -89,6 +89,9 @@
   .tgl{font-family:var(--mono);font-size:12px;color:var(--accent);background:transparent;border:1px solid var(--line);
     border-radius:8px;padding:7px 12px;cursor:pointer;transition:background .2s;white-space:nowrap;}
   .tgl.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  select.dropdown{font-family:var(--disp);font-size:13px;color:var(--txt);background:var(--bg);
+    border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer;outline:none;}
+  select.dropdown:focus{border-color:var(--accent);}
 
   .notes{background:var(--bg-elev);border:1px solid var(--line);border-radius:14px;padding:14px 16px;font-size:12px;line-height:1.7;color:var(--muted);}
   .notes b{color:var(--txt);font-weight:600;}
@@ -125,7 +128,7 @@
     <button class="btn go" id="mainBtn">▶ 開始</button>
     <button class="btn ghost" id="resetBtn">歸零</button>
   </div>
-  <div class="status"><span class="dot" id="stDot"></span><span id="stText">把手機螢幕朝上平放在轉盤上，按開始</span></div>
+  <div class="status"><span class="dot" id="stDot"></span><span id="stText">設定好手機擺放方向後，按開始</span></div>
 
   <div class="nums">
     <div class="num cent">
@@ -157,6 +160,14 @@
 
   <section class="settings">
     <div class="srow">
+      <div><label>手機擺放方向</label><div class="hint">切換負責感測的 XYZ 軸</div></div>
+      <select id="axisSelect" class="dropdown">
+        <option value="z">平放 (繞 Z 軸轉)</option>
+        <option value="y">直立 (繞 Y 軸轉)</option>
+        <option value="x">側立 (繞 X 軸轉)</option>
+      </select>
+    </div>
+    <div class="srow">
       <div><label>物體質量</label><div class="hint">用於計算向心力 F</div></div>
       <div class="mass"><input type="number" id="massInput" value="0.20" min="0" step="0.01" inputmode="decimal"><span>kg</span></div>
     </div>
@@ -169,10 +180,9 @@
   <div class="notes">
     <b>怎麼玩</b>
     <ul>
-      <li>手機<b>螢幕朝上</b>平放在轉盤上：懶人轉盤、辦公椅、唱片機都行。</li>
-      <li>先確認桌面水平，靜止時按<b>歸零</b>校正傾斜偏移，再轉動轉盤。</li>
+      <li>請先在設定中選擇<b>手機擺放方向</b>（平放、直立看影片、側躺）。</li>
+      <li>先確認設備穩定不晃動，靜止時按<b>歸零</b>校正傾斜偏移與重力，再開始轉動。</li>
       <li>紅箭頭<b>向心力</b>指向圓心，藍箭頭<b>移動方向</b>沿切線；長度隨大小變化，實際數值看下方。</li>
-      <li>公式：<code>a = ω²r</code> · <code>v = ωr</code> · <code>F = m·a</code>，半徑與速度由加速度計和陀螺儀反推。</li>
       <li>轉速／半徑／速度需要<b>陀螺儀</b>；電腦或缺陀螺儀的裝置只會顯示加速度。</li>
       <li class="warn">轉太快手機會被甩出去，建議用膠帶固定並放慢速度。</li>
     </ul>
@@ -181,16 +191,17 @@
 <script>
 (function(){
   "use strict";
-  var G=9.80665, DEG=Math.PI/180, K=0.15, WMIN=0.30; // WMIN rad/s：低於此轉速時 r/v 不可靠
+  var G=9.80665, DEG=Math.PI/180, K=0.15, WMIN=0.30;
   var $=function(id){return document.getElementById(id);};
 
   var S={
     running:false, paused:false,
     accelOk:false, gyroOk:false, gotMotion:false,
-    ac:0, omega:0, theta:0,          // 平滑後：向心加速度、角速度(rad/s,含號)、顯示角度
-    gx0:0, gy0:0,                    // 傾斜偏移校正
+    ac:0, omega:0, theta:0,          
+    rotAxis:'z',                     // z, y, 或 x
+    a0:{x:0, y:0, z:0},              // 重力與傾斜偏移校正
     mass:0.20, flip:1,
-    raw:{gx:0,gy:0,alpha:0},
+    raw:{ax:0, ay:0, az:0, rx:0, ry:0, rz:0}, // 完整的三維原始資料
     last:0
   };
 
@@ -212,13 +223,19 @@
 
   function setStatus(cls,t){ $("stDot").className="dot"+(cls?" "+cls:""); $("stText").textContent=t; }
 
-  // 感測
+  // 感測 (擴充為抓取 3 軸)
   function onMotion(e){
     var ag=e.accelerationIncludingGravity, r=e.rotationRate;
     if(ag && ag.x!==null && ag.x!==undefined){
-      S.accelOk=true; S.gotMotion=true; S.raw.gx=ag.x||0; S.raw.gy=ag.y||0;
+      S.accelOk=true; S.gotMotion=true; 
+      S.raw.ax=ag.x||0; S.raw.ay=ag.y||0; S.raw.az=ag.z||0;
     }
-    if(r && r.alpha!==null && r.alpha!==undefined){ S.gyroOk=true; S.raw.alpha=r.alpha||0; }
+    if(r && r.alpha!==null && r.alpha!==undefined){ 
+      S.gyroOk=true; 
+      S.raw.rz=r.alpha||0; // 繞 Z 軸轉 (Alpha)
+      S.raw.rx=r.beta||0;  // 繞 X 軸轉 (Beta)
+      S.raw.ry=r.gamma||0; // 繞 Y 軸轉 (Gamma)
+    }
   }
 
   function main(){
@@ -236,6 +253,7 @@
       }).catch(function(){ setStatus("err","授權失敗，請再點一次"); });
     } else begin();
   }
+  
   function begin(){
     window.addEventListener("devicemotion", onMotion);
     S.running=true; S.paused=false; S.gotMotion=false; S.gyroOk=false;
@@ -245,8 +263,7 @@
     loop();
     setTimeout(function(){
       if(S.running && !S.gotMotion){
-        setStatus("warn", inIframe ? "無感測資料 — 內嵌環境常封鎖，請直接開啟網址"
-                                    : "無感測資料 — 此裝置可能沒有加速度計");
+        setStatus("warn", inIframe ? "無感測資料 — 內嵌環境常封鎖，請直接開啟網址" : "無感測資料 — 此裝置可能沒有加速度計");
       } else if(S.running && !S.gyroOk){
         setStatus("warn","偵測不到陀螺儀 — 僅顯示加速度，無法算轉速／半徑／速度");
       }
@@ -254,8 +271,10 @@
   }
 
   function reset(){
-    // 靜止時把當前水平讀值當作偏移校正；同時角度歸零
-    if(Math.abs(S.raw.alpha)<8){ S.gx0=S.raw.gx; S.gy0=S.raw.gy; }
+    // 判斷靜止狀態並抓取 3 軸的環境重力作為偏移值
+    if(Math.abs(S.raw.rx)<8 && Math.abs(S.raw.ry)<8 && Math.abs(S.raw.rz)<8){ 
+      S.a0.x = S.raw.ax; S.a0.y = S.raw.ay; S.a0.z = S.raw.az; 
+    }
     S.theta=0; S.ac=0; S.omega=0;
     draw();
     if(S.running) setStatus(S.paused?"warn":"on", S.paused?"已暫停（已歸零）":"已歸零");
@@ -267,20 +286,36 @@
     var now=performance.now(), dt=(now-S.last)/1000; S.last=now;
     if(dt>0.1) dt=0.1;
 
-    var gx=S.raw.gx-S.gx0, gy=S.raw.gy-S.gy0;
-    var acInst=Math.sqrt(gx*gx+gy*gy);
+    // 依照使用者選擇的「旋轉軸」，動態決定向心平面 (a1, a2) 以及對應的轉速 (rot)
+    var a1=0, a2=0, rot=0;
+    
+    if (S.rotAxis === 'z') {
+      a1 = S.raw.ax - S.a0.x; 
+      a2 = S.raw.ay - S.a0.y; 
+      rot = S.raw.rz;
+    } else if (S.rotAxis === 'y') {
+      a1 = S.raw.ax - S.a0.x; 
+      a2 = S.raw.az - S.a0.z; 
+      rot = S.raw.ry;
+    } else if (S.rotAxis === 'x') {
+      a1 = S.raw.ay - S.a0.y; 
+      a2 = S.raw.az - S.a0.z; 
+      rot = S.raw.rx;
+    }
+
+    var acInst=Math.sqrt(a1*a1+a2*a2);
     S.ac += K*(acInst-S.ac);
 
-    var wInst=S.raw.alpha*DEG*S.flip;
+    var wInst=rot*DEG*S.flip;
     S.omega += K*(wInst-S.omega);
     S.theta += S.omega*dt;
 
-    updateNums();
+    updateNums(rot);
     draw();
     requestAnimationFrame(loop);
   }
 
-  function updateNums(){
+  function updateNums(rawRot){
     var aw=Math.abs(S.omega);
     var reliable = S.gyroOk && aw>WMIN;
     var r = reliable ? S.ac/(aw*aw) : NaN;
@@ -294,8 +329,10 @@
     if(!isNaN(v)){ $("nV").innerHTML=v.toFixed(2)+'<small>m/s</small>'; $("nVk").textContent=(v*3.6).toFixed(1)+" km/h"; }
     else { $("nV").innerHTML='–<small>m/s</small>'; $("nVk").textContent=(S.gyroOk?"轉速過低":"需陀螺儀"); }
 
-    if(!isNaN(rpm)){ $("nRpm").innerHTML=rpm.toFixed(1)+'<small>rpm</small>';
-      $("nOmega").textContent=Math.abs(S.raw.alpha).toFixed(0)+" °/s · "+aw.toFixed(2)+" rad/s"; }
+    if(!isNaN(rpm)){ 
+      $("nRpm").innerHTML=rpm.toFixed(1)+'<small>rpm</small>';
+      $("nOmega").textContent=Math.abs(rawRot).toFixed(0)+" °/s · "+aw.toFixed(2)+" rad/s"; 
+    }
     else { $("nRpm").innerHTML='–<small>rpm</small>'; $("nOmega").textContent="需陀螺儀"; }
 
     if(!isNaN(r)){ $("nR").innerHTML=(r>99?">99":r.toFixed(2))+'<small>m</small>'; }
@@ -310,37 +347,30 @@
     ctx.clearRect(0,0,W,H);
     var cx=W/2, cy=H/2, R=Math.min(W,H)*0.40, Rp=R*0.72;
 
-    // 轉盤圓盤
     var grd=ctx.createRadialGradient(cx,cy,R*0.1,cx,cy,R);
     grd.addColorStop(0,"#141d33"); grd.addColorStop(1,"#0c1223");
     ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.fill();
     ctx.strokeStyle="rgba(91,140,255,.35)"; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.stroke();
 
-    // 同心環
     ctx.strokeStyle="rgba(30,41,66,.9)"; ctx.lineWidth=1;
     for(var i=1;i<=3;i++){ ctx.beginPath(); ctx.arc(cx,cy,R*i/4,0,7); ctx.stroke(); }
 
-    // 路徑虛線
     ctx.setLineDash([4,6]); ctx.strokeStyle="rgba(131,148,179,.35)";
     ctx.beginPath(); ctx.arc(cx,cy,Rp,0,7); ctx.stroke(); ctx.setLineDash([]);
 
-    // 圓心
     ctx.fillStyle="#5b8cff"; ctx.beginPath(); ctx.arc(cx,cy,4,0,7); ctx.fill();
     ctx.strokeStyle="rgba(131,148,179,.5)"; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(cx-9,cy); ctx.lineTo(cx+9,cy); ctx.moveTo(cx,cy-9); ctx.lineTo(cx,cy+9); ctx.stroke();
 
-    // 手機位置
     var th=S.theta;
     var px=cx+Rp*Math.cos(th), py=cy+Rp*Math.sin(th);
 
-    // 手機圖示（跟著轉）
     ctx.save(); ctx.translate(px,py); ctx.rotate(th+Math.PI/2);
     ctx.fillStyle="#0f1524"; ctx.strokeStyle="rgba(91,140,255,.7)"; ctx.lineWidth=1.5;
     roundRect(-11,-20,22,40,5); ctx.fill(); ctx.stroke();
     ctx.fillStyle="rgba(91,140,255,.25)"; roundRect(-8,-16,16,32,3); ctx.fill();
     ctx.restore();
 
-    // 箭頭方向
     var toC={x:(cx-px),y:(cy-py)}; toC=norm(toC);
     var vel={x:-Math.sin(th)*sign(S.omega), y:Math.cos(th)*sign(S.omega)};
     if(S.omega===0) vel={x:0,y:0};
@@ -362,13 +392,14 @@
     ctx.lineTo(x2-ah*Math.cos(ang)+aw*Math.sin(ang), y2-ah*Math.sin(ang)-aw*Math.cos(ang));
     ctx.lineTo(x2-ah*Math.cos(ang)-aw*Math.sin(ang), y2-ah*Math.sin(ang)+aw*Math.cos(ang));
     ctx.closePath(); ctx.fill(); ctx.shadowBlur=0;
-    // 標籤
+    
     ctx.font="600 12px 'JetBrains Mono',monospace";
     var tw=ctx.measureText(label).width, lx=x2+ux*12, ly=y2+uy*12;
     ctx.fillStyle="rgba(8,11,20,.85)"; roundRect(lx-tw/2-6,ly-9,tw+12,18,5); ctx.fill();
     ctx.fillStyle=color; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillText(label,lx,ly);
   }
+  
   function roundRect(x,y,w,h,r){ ctx.beginPath();
     ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
     ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
@@ -376,15 +407,22 @@
   function sign(x){ return x>0?1:(x<0?-1:0); }
   function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
-  // 設定
+  // 事件綁定
+  $("axisSelect").addEventListener("change", function(){
+    S.rotAxis = this.value;
+    reset(); // 切換軸心時建議自動歸零，避免重力方向錯誤
+  });
+
   $("massInput").addEventListener("input", function(){
     var m=parseFloat(this.value); S.mass=(isNaN(m)||m<0)?0:m;
     $("nFsub").textContent="質量 "+S.mass.toFixed(2)+" kg";
-    if(!S.running||S.paused) updateNums();
+    if(!S.running||S.paused) updateNums(S.omega/DEG/S.flip);
   });
+  
   $("flipBtn").addEventListener("click", function(){
     S.flip*=-1; this.classList.toggle("on",S.flip<0); this.textContent=S.flip<0?"已反轉":"正常";
   });
+  
   $("mainBtn").addEventListener("click", main);
   $("resetBtn").addEventListener("click", reset);
 
