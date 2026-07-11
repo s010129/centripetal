@@ -81,6 +81,7 @@
   .srow + .srow{border-top:1px solid var(--line);}
   .srow label{font-size:13px;color:var(--txt);}
   .srow .hint{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px;}
+  .srow .hint b{color:var(--vel);font-weight:600;}
   .mass{display:flex;align-items:center;gap:8px;}
   .mass input{width:84px;font-family:var(--mono);font-size:14px;color:var(--txt);background:var(--bg);
     border:1px solid var(--line);border-radius:8px;padding:8px 10px;text-align:right;}
@@ -128,7 +129,7 @@
     <button class="btn go" id="mainBtn">▶ 開始</button>
     <button class="btn ghost" id="resetBtn">歸零</button>
   </div>
-  <div class="status"><span class="dot" id="stDot"></span><span id="stText">選好手機擺放方向後，按開始</span></div>
+  <div class="status"><span class="dot" id="stDot"></span><span id="stText">把手機放上轉盤，靜止時按歸零，再開始</span></div>
 
   <div class="nums">
     <div class="num cent">
@@ -160,10 +161,12 @@
 
   <section class="settings">
     <div class="srow">
-      <div><label>手機擺放方向</label><div class="hint">選擇哪一軸為向心／切線方向</div></div>
+      <div><label>手機擺放方向</label><div class="hint" id="axisHint">自動偵測：平放（垂直 Z）</div></div>
       <select id="axisSelect" class="dropdown">
-        <option value="portrait">直向平放｜Y 向心 · X 切線</option>
-        <option value="landscape">橫向平放｜X 向心 · Y 切線</option>
+        <option value="auto">自動偵測</option>
+        <option value="z">平放（垂直 Z）</option>
+        <option value="y">直立（垂直 Y）</option>
+        <option value="x">側立（垂直 X）</option>
       </select>
     </div>
     <div class="srow">
@@ -179,10 +182,11 @@
   <div class="notes">
     <b>怎麼玩</b>
     <ul>
-      <li>手機<b>螢幕朝上平放</b>在轉盤上，於設定選擇<b>直向</b>或<b>橫向</b>擺放（兩者皆繞 Z 軸轉）。</li>
-      <li>先確認桌面水平、靜止時按<b>歸零</b>校正重力與傾斜偏移，再開始轉動。</li>
-      <li>紅箭頭<b>向心力</b>指向圓心，藍箭頭<b>移動方向</b>沿切線；長度隨大小變化，實際數值看下方。</li>
-      <li>公式：<code>a = ω²r</code> · <code>v = ωr</code> · <code>F = m·a</code>，半徑與速度由加速度計和陀螺儀反推。</li>
+      <li>把手機放上轉盤：<b>平放</b>（螢幕朝上）或<b>直立</b>（方便看螢幕）都可以。</li>
+      <li>靜止時按<b>歸零</b>：校正重力並<b>自動判定垂直軸</b>，也可在設定手動指定。</li>
+      <li>向心加速度取<b>水平面兩軸的合量</b>，轉軸自動對應垂直軸，換擺法都不會錯。</li>
+      <li>紅箭頭<b>向心力</b>指向圓心，藍箭頭<b>移動方向</b>沿切線；數值看下方。</li>
+      <li>公式：<code>a = ω²r</code> · <code>v = ωr</code> · <code>F = m·a</code>；半徑與速度由加速度計和陀螺儀反推。</li>
       <li>轉速／半徑／速度需要<b>陀螺儀</b>；電腦或缺陀螺儀的裝置只會顯示加速度。</li>
       <li class="warn">轉太快手機會被甩出去，建議用膠帶固定並放慢速度。</li>
     </ul>
@@ -192,16 +196,18 @@
 (function(){
   "use strict";
   var G=9.80665, DEG=Math.PI/180, K=0.15, WMIN=0.30; // WMIN rad/s：低於此轉速時 r/v 不可靠
+  var STILL=8;                                        // °/s：低於此視為靜止（可重新判定垂直軸）
   var $=function(id){return document.getElementById(id);};
 
   var S={
     running:false, paused:false,
     accelOk:false, gyroOk:false, gotMotion:false,
     ac:0, omega:0, theta:0,          // 平滑後：向心加速度、角速度(rad/s,含號)、顯示角度
-    orient:'portrait',               // portrait 直向 | landscape 橫向（皆平放，繞 Z 軸）
-    a0:{x:0, y:0, z:0},              // 重力與傾斜偏移校正
+    axisMode:'auto',                 // auto | z | y | x（下拉選單）
+    vAxis:'z',                       // 目前判定的垂直（重力）軸
+    a0:{x:0, y:0, z:0},              // 靜止時的重力／傾斜偏移
     mass:0.20, flip:1,
-    raw:{ax:0, ay:0, az:0, rx:0, ry:0, rz:0}, // 完整三軸原始資料
+    raw:{ax:0, ay:0, az:0, rx:0, ry:0, rz:0}, // 三軸原始資料
     last:0
   };
 
@@ -232,10 +238,34 @@
     }
     if(r && r.alpha!==null && r.alpha!==undefined){
       S.gyroOk=true;
-      S.raw.rz=r.alpha||0; // 繞 Z 軸（Alpha）— 平放旋轉
+      S.raw.rz=r.alpha||0; // 繞 Z 軸（Alpha）
       S.raw.rx=r.beta||0;  // 繞 X 軸（Beta）
       S.raw.ry=r.gamma||0; // 繞 Y 軸（Gamma）
     }
+  }
+
+  // 依重力大小判定垂直軸
+  function detectVertical(){
+    var ax=Math.abs(S.raw.ax), ay=Math.abs(S.raw.ay), az=Math.abs(S.raw.az);
+    if(az>=ax && az>=ay) return 'z';
+    if(ay>=ax && ay>=az) return 'y';
+    return 'x';
+  }
+  function isStill(){ return Math.abs(S.raw.rx)<STILL && Math.abs(S.raw.ry)<STILL && Math.abs(S.raw.rz)<STILL; }
+
+  // 向心加速度 = 水平面兩軸（非垂直軸）的合量
+  function centripetal(){
+    var h1,h2;
+    if(S.vAxis==='z'){ h1=S.raw.ax-S.a0.x; h2=S.raw.ay-S.a0.y; }
+    else if(S.vAxis==='y'){ h1=S.raw.ax-S.a0.x; h2=S.raw.az-S.a0.z; }
+    else { h1=S.raw.ay-S.a0.y; h2=S.raw.az-S.a0.z; }
+    return Math.sqrt(h1*h1+h2*h2);
+  }
+  // 繞垂直軸的角速度（原始 °/s）
+  function omegaRaw(){
+    if(S.vAxis==='z') return S.raw.rz;
+    if(S.vAxis==='y') return S.raw.ry;
+    return S.raw.rx;
   }
 
   function main(){
@@ -271,13 +301,19 @@
   }
 
   function reset(){
-    // 靜止時把三軸環境重力當作偏移校正；角度同時歸零
-    if(Math.abs(S.raw.rx)<8 && Math.abs(S.raw.ry)<8 && Math.abs(S.raw.rz)<8){
+    // 靜止時：自動判定垂直軸（auto 模式）並抓取重力偏移；角度歸零
+    if(isStill()){
+      if(S.axisMode==='auto') S.vAxis=detectVertical();
       S.a0.x=S.raw.ax; S.a0.y=S.raw.ay; S.a0.z=S.raw.az;
     }
     S.theta=0; S.ac=0; S.omega=0;
-    draw();
+    updateAxisHint(); draw();
     if(S.running) setStatus(S.paused?"warn":"on", S.paused?"已暫停（已歸零）":"已歸零");
+  }
+
+  function updateAxisHint(){
+    var name={z:'平放（垂直 Z）',y:'直立（垂直 Y）',x:'側立（垂直 X）'}[S.vAxis];
+    $("axisHint").innerHTML=(S.axisMode==='auto'?'自動偵測：<b>':'手動：<b>')+name+'</b>';
   }
 
   // 主迴圈
@@ -286,18 +322,17 @@
     var now=performance.now(), dt=(now-S.last)/1000; S.last=now;
     if(dt>0.1) dt=0.1;
 
-    // 皆為平放（繞 Z 軸旋轉）；依直向／橫向決定哪一軸為向心方向
-    var aRad = (S.orient==='portrait') ? (S.raw.ay-S.a0.y) : (S.raw.ax-S.a0.x);
-    var rot  = S.raw.rz;
+    // auto 模式：靜止時持續重新判定垂直軸（轉動時維持不變）
+    if(S.axisMode==='auto' && isStill()) S.vAxis=detectVertical();
 
-    var acInst=Math.abs(aRad);
+    var acInst=centripetal();
     S.ac += K*(acInst-S.ac);
 
-    var wInst=rot*DEG*S.flip;
+    var wInst=omegaRaw()*DEG*S.flip;
     S.omega += K*(wInst-S.omega);
     S.theta += S.omega*dt;
 
-    updateNums(rot);
+    updateNums(omegaRaw());
     draw();
     requestAnimationFrame(loop);
   }
@@ -352,13 +387,11 @@
     var th=S.theta;
     var px=cx+Rp*Math.cos(th), py=cy+Rp*Math.sin(th);
 
-    // 手機圖示（依擺放方向調整長寬，跟著轉）
+    // 手機圖示（跟著轉）
     ctx.save(); ctx.translate(px,py); ctx.rotate(th+Math.PI/2);
     ctx.fillStyle="#0f1524"; ctx.strokeStyle="rgba(91,140,255,.7)"; ctx.lineWidth=1.5;
-    if(S.orient==='portrait'){ roundRect(-11,-20,22,40,5); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="rgba(91,140,255,.25)"; roundRect(-8,-16,16,32,3); ctx.fill(); }
-    else { roundRect(-20,-11,40,22,5); ctx.fill(); ctx.stroke();
-      ctx.fillStyle="rgba(91,140,255,.25)"; roundRect(-16,-8,32,16,3); ctx.fill(); }
+    roundRect(-11,-20,22,40,5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle="rgba(91,140,255,.25)"; roundRect(-8,-16,16,32,3); ctx.fill();
     ctx.restore();
 
     var toC={x:(cx-px),y:(cy-py)}; toC=norm(toC);
@@ -399,15 +432,15 @@
 
   // 事件綁定
   $("axisSelect").addEventListener("change", function(){
-    S.orient=this.value;
-    reset(); // 切換擺放方向時自動歸零，重新校正重力
-    draw();
+    S.axisMode=this.value;
+    if(this.value!=='auto') S.vAxis=this.value;
+    reset();
   });
 
   $("massInput").addEventListener("input", function(){
     var m=parseFloat(this.value); S.mass=(isNaN(m)||m<0)?0:m;
     $("nFsub").textContent="質量 "+S.mass.toFixed(2)+" kg";
-    if(!S.running||S.paused) updateNums(S.omega/DEG/S.flip);
+    if(!S.running||S.paused) updateNums(omegaRaw());
   });
 
   $("flipBtn").addEventListener("click", function(){
@@ -417,6 +450,7 @@
   $("mainBtn").addEventListener("click", main);
   $("resetBtn").addEventListener("click", reset);
 
+  updateAxisHint();
   resize();
 })();
 </script>
