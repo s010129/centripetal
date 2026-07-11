@@ -161,12 +161,27 @@
 
   <section class="settings">
     <div class="srow">
-      <div><label>手機擺放方向</label><div class="hint" id="axisHint">自動偵測：平放（垂直 Z）</div></div>
-      <select id="axisSelect" class="dropdown">
-        <option value="auto">自動偵測</option>
-        <option value="z">平放（垂直 Z）</option>
-        <option value="y">直立（垂直 Y）</option>
-        <option value="x">側立（垂直 X）</option>
+      <div><label>X 軸</label><div class="hint" id="hintX">目前：向心方向</div></div>
+      <select id="axisX" class="dropdown">
+        <option value="disabled">停用</option>
+        <option value="centripetal" selected>向心方向</option>
+        <option value="tangential">切線方向</option>
+      </select>
+    </div>
+    <div class="srow">
+      <div><label>Y 軸</label><div class="hint" id="hintY">目前：向心方向</div></div>
+      <select id="axisY" class="dropdown">
+        <option value="disabled">停用</option>
+        <option value="centripetal" selected>向心方向</option>
+        <option value="tangential">切線方向</option>
+      </select>
+    </div>
+    <div class="srow">
+      <div><label>Z 軸</label><div class="hint" id="hintZ">目前：切線方向</div></div>
+      <select id="axisZ" class="dropdown">
+        <option value="disabled">停用</option>
+        <option value="centripetal">向心方向</option>
+        <option value="tangential" selected>切線方向</option>
       </select>
     </div>
     <div class="srow">
@@ -182,9 +197,9 @@
   <div class="notes">
     <b>怎麼玩</b>
     <ul>
-      <li>把手機放上轉盤：<b>平放</b>（螢幕朝上）或<b>直立</b>（方便看螢幕）都可以。</li>
-      <li>靜止時按<b>歸零</b>：校正重力並<b>自動判定垂直軸</b>，也可在設定手動指定。</li>
-      <li>向心加速度取<b>水平面兩軸的合量</b>，轉軸自動對應垂直軸，換擺法都不會錯。</li>
+      <li>把手機放上轉盤，先在設定中把 <b>X／Y／Z 三軸</b>各自指定角色：<b>向心方向</b>（水平面上、參與加速度計算的軸）、<b>切線方向</b>（垂直於轉盤面、也就是轉軸，讀取陀螺儀轉速）、或<b>停用</b>（不使用）。</li>
+      <li>靜止時按<b>歸零</b>：校正各軸的重力／傾斜偏移，並把角度歸零。</li>
+      <li>向心加速度取所有標為<b>向心方向</b>軸的合量，轉速則讀取標為<b>切線方向</b>那一軸的陀螺儀數值。</li>
       <li>紅箭頭<b>向心力</b>指向圓心，藍箭頭<b>移動方向</b>沿切線；數值看下方。</li>
       <li>公式：<code>a = ω²r</code> · <code>v = ωr</code> · <code>F = m·a</code>；半徑與速度由加速度計和陀螺儀反推。</li>
       <li>轉速／半徑／速度需要<b>陀螺儀</b>；電腦或缺陀螺儀的裝置只會顯示加速度。</li>
@@ -203,8 +218,7 @@
     running:false, paused:false,
     accelOk:false, gyroOk:false, gotMotion:false,
     ac:0, omega:0, theta:0,          // 平滑後：向心加速度、角速度(rad/s,含號)、顯示角度
-    axisMode:'auto',                 // auto | z | y | x（下拉選單）
-    vAxis:'z',                       // 目前判定的垂直（重力）軸
+    roles:{x:'centripetal', y:'centripetal', z:'tangential'}, // 每軸角色：disabled | centripetal | tangential
     a0:{x:0, y:0, z:0},              // 靜止時的重力／傾斜偏移
     mass:0.20, flip:1,
     raw:{ax:0, ay:0, az:0, rx:0, ry:0, rz:0}, // 三軸原始資料
@@ -244,28 +258,22 @@
     }
   }
 
-  // 依重力大小判定垂直軸
-  function detectVertical(){
-    var ax=Math.abs(S.raw.ax), ay=Math.abs(S.raw.ay), az=Math.abs(S.raw.az);
-    if(az>=ax && az>=ay) return 'z';
-    if(ay>=ax && ay>=az) return 'y';
-    return 'x';
-  }
   function isStill(){ return Math.abs(S.raw.rx)<STILL && Math.abs(S.raw.ry)<STILL && Math.abs(S.raw.rz)<STILL; }
 
-  // 向心加速度 = 水平面兩軸（非垂直軸）的合量
+  // 向心加速度 = 所有標為「向心方向」的軸之合量
   function centripetal(){
-    var h1,h2;
-    if(S.vAxis==='z'){ h1=S.raw.ax-S.a0.x; h2=S.raw.ay-S.a0.y; }
-    else if(S.vAxis==='y'){ h1=S.raw.ax-S.a0.x; h2=S.raw.az-S.a0.z; }
-    else { h1=S.raw.ay-S.a0.y; h2=S.raw.az-S.a0.z; }
-    return Math.sqrt(h1*h1+h2*h2);
+    var sum=0;
+    if(S.roles.x==='centripetal'){ var dx=S.raw.ax-S.a0.x; sum+=dx*dx; }
+    if(S.roles.y==='centripetal'){ var dy=S.raw.ay-S.a0.y; sum+=dy*dy; }
+    if(S.roles.z==='centripetal'){ var dz=S.raw.az-S.a0.z; sum+=dz*dz; }
+    return Math.sqrt(sum);
   }
-  // 繞垂直軸的角速度（原始 °/s）
+  // 標為「切線方向」那一軸的角速度（原始 °/s，繞該軸旋轉＝該軸為轉軸）
   function omegaRaw(){
-    if(S.vAxis==='z') return S.raw.rz;
-    if(S.vAxis==='y') return S.raw.ry;
-    return S.raw.rx;
+    if(S.roles.z==='tangential') return S.raw.rz;
+    if(S.roles.y==='tangential') return S.raw.ry;
+    if(S.roles.x==='tangential') return S.raw.rx;
+    return 0;
   }
 
   function main(){
@@ -301,9 +309,8 @@
   }
 
   function reset(){
-    // 靜止時：自動判定垂直軸（auto 模式）並抓取重力偏移；角度歸零
+    // 靜止時：抓取重力／傾斜偏移；角度歸零
     if(isStill()){
-      if(S.axisMode==='auto') S.vAxis=detectVertical();
       S.a0.x=S.raw.ax; S.a0.y=S.raw.ay; S.a0.z=S.raw.az;
     }
     S.theta=0; S.ac=0; S.omega=0;
@@ -311,9 +318,11 @@
     if(S.running) setStatus(S.paused?"warn":"on", S.paused?"已暫停（已歸零）":"已歸零");
   }
 
+  var ROLE_NAME={disabled:'停用', centripetal:'向心方向', tangential:'切線方向'};
   function updateAxisHint(){
-    var name={z:'平放（垂直 Z）',y:'直立（垂直 Y）',x:'側立（垂直 X）'}[S.vAxis];
-    $("axisHint").innerHTML=(S.axisMode==='auto'?'自動偵測：<b>':'手動：<b>')+name+'</b>';
+    $("hintX").textContent="目前："+ROLE_NAME[S.roles.x];
+    $("hintY").textContent="目前："+ROLE_NAME[S.roles.y];
+    $("hintZ").textContent="目前："+ROLE_NAME[S.roles.z];
   }
 
   // 主迴圈
@@ -321,9 +330,6 @@
     if(!S.running || S.paused) return;
     var now=performance.now(), dt=(now-S.last)/1000; S.last=now;
     if(dt>0.1) dt=0.1;
-
-    // auto 模式：靜止時持續重新判定垂直軸（轉動時維持不變）
-    if(S.axisMode==='auto' && isStill()) S.vAxis=detectVertical();
 
     var acInst=centripetal();
     S.ac += K*(acInst-S.ac);
@@ -431,11 +437,26 @@
   function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
   // 事件綁定
-  $("axisSelect").addEventListener("change", function(){
-    S.axisMode=this.value;
-    if(this.value!=='auto') S.vAxis=this.value;
-    reset();
-  });
+  var axisSelects={x:$("axisX"), y:$("axisY"), z:$("axisZ")};
+  function onAxisChange(axis){
+    return function(){
+      var val=this.value;
+      // 切線方向（轉軸）同一時間只能有一軸，選新的會把舊的改成停用
+      if(val==='tangential'){
+        ['x','y','z'].forEach(function(a){
+          if(a!==axis && S.roles[a]==='tangential'){
+            S.roles[a]='disabled';
+            axisSelects[a].value='disabled';
+          }
+        });
+      }
+      S.roles[axis]=val;
+      reset();
+    };
+  }
+  $("axisX").addEventListener("change", onAxisChange('x'));
+  $("axisY").addEventListener("change", onAxisChange('y'));
+  $("axisZ").addEventListener("change", onAxisChange('z'));
 
   $("massInput").addEventListener("input", function(){
     var m=parseFloat(this.value); S.mass=(isNaN(m)||m<0)?0:m;
